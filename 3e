@@ -1,0 +1,107 @@
+#!/bin/bash
+
+# Triple-E: Docker and Boot2Docker wrapper scripts
+
+# Christopher Harrison
+# Human Genetics Informatics, Wellcome Trust Sanger Institute
+
+# GPL3
+
+read -r -d '' USAGE <<EOF
+Usage: 3e [command]
+
+Command:
+  ahoy     Start Docker host (if not already running)
+  avast    Stop Docker host
+  scuttle  Stop and remove all running containers and remove all images
+EOF
+
+DHOST=boot2docker
+DOCKER=docker
+
+# Docker host status
+function hostStatus {
+  $DHOST status
+  return 0
+}
+
+# Running status of Docker host
+function isAfloat {
+  if [ $(hostStatus) == "running" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# Start Docker host
+function fullAhead {
+  if isAfloat; then
+    DHOST_IP=$($DHOST ip 2>/dev/null)
+    echo "Docker host afloat on $DHOST_IP"
+  else
+    echo "Launching Docker host..."
+    $DHOST start &>/dev/null \
+                 && fullAhead \
+                 || echo "Couldn't start host :("
+  fi
+}
+
+# Stop Docker host
+function allStop {
+  if isAfloat; then
+    $($DHOST stop) && echo "Docker host in dry dock"
+  fi
+}
+
+# Stop and remove all running containers and remove all images
+function manOverboard {
+  if isAfloat; then
+    PS=$($DOCKER ps -a -q)
+    IMG=$($DOCKER images -q)
+
+    if [ -n "$PS" ]; then
+      echo -n 'Stopping all running containers... '
+      $DOCKER stop $PS &>/dev/null \
+                       && echo "Done" \
+                       || { echo "Failed!"; exit 1; }
+
+      echo -n 'Removing all containers... '
+      $DOCKER rm $PS &>/dev/null \
+                     && echo "Done" \
+                     || { echo "Failed!"; exit 1; }
+    fi
+
+    if [ -n "$IMG" ]; then
+      echo -n 'Removing all images... '
+      $DOCKER rmi $IMG &>/dev/null \
+                       && echo "Done" \
+                       || { echo "Failed!"; exit 1; }
+    fi
+  fi
+}
+
+# Command line option delegation
+function main {
+  ARGV=$1
+
+  case $ARGV in
+    "ahoy")
+      fullAhead
+      ;;
+    "avast")
+      allStop
+      ;;
+    "scuttle")
+      manOverboard
+      ;;
+    "yarr")
+      echo "Hahaarr!"
+      ;;
+    *)
+      echo "$USAGE"
+      ;;
+  esac
+}
+
+main $1
