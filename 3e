@@ -55,7 +55,7 @@ function allStop {
 }
 
 # Stop and remove all running containers and remove all images
-function manOverboard {
+function walkThePlank {
   if isAfloat; then
     PS=$($DOCKER ps -a -q)
     IMG=$($DOCKER images -q)
@@ -93,10 +93,14 @@ function main {
       allStop
       ;;
     "scuttle")
-      manOverboard
+      walkThePlank
       ;;
     "yarr")
-      echo "Hahaarr!"
+      if [ $(date "+%m%d") == "0919" ]; then
+        echo "Hahaarr, matey! Ye be a scurvy dog!"
+      else
+        main
+      fi
       ;;
     *)
       echo "$USAGE"
