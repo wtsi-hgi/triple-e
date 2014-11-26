@@ -10,7 +10,7 @@
 read -r -d '' USAGE <<EOF
 Usage: 3e [command]
 
-Command:
+Commands:
   ahoy     Start Docker host (if not already running)
   avast    Stop Docker host
   scuttle  Stop and remove all running containers and remove all images
@@ -22,7 +22,6 @@ DOCKER=docker
 # Docker host status
 function hostStatus {
   $DHOST status
-  return 0
 }
 
 # Running status of Docker host
