@@ -7,7 +7,7 @@
 
 # GPL3
 
-read -r -d '' USAGE <<EOF
+read -r -d "" USAGE <<EOF
 Usage: 3e [command]
 
 Commands:
@@ -18,6 +18,19 @@ EOF
 
 DHOST=boot2docker
 DOCKER=docker
+
+# Simple command "try...catch" block
+function cmdTry {
+  TEXT=$1
+  CMD=$2
+
+  # Run $CMD but pipe all output to /dev/null
+  # Print $TEXT... followed with "Done" or "Failed!" appropriately
+  # Exit on failure
+  echo -n "$TEXT... "
+  $CMD &>/dev/null && echo "Done" \
+                   || { echo "Failed!"; exit 1; }
+}
 
 # Docker host status
 function hostStatus {
@@ -60,22 +73,12 @@ function walkThePlank {
     IMG=$($DOCKER images -q)
 
     if [ -n "$PS" ]; then
-      echo -n 'Stopping all running containers... '
-      $DOCKER stop $PS &>/dev/null \
-                       && echo "Done" \
-                       || { echo "Failed!"; exit 1; }
-
-      echo -n 'Removing all containers... '
-      $DOCKER rm $PS &>/dev/null \
-                     && echo "Done" \
-                     || { echo "Failed!"; exit 1; }
+      cmdTry "Stopping all running containers" "$DOCKER stop $PS"
+      cmdTry "Removing all containers" "$DOCKER rm $PS"
     fi
 
     if [ -n "$IMG" ]; then
-      echo -n 'Removing all images... '
-      $DOCKER rmi $IMG &>/dev/null \
-                       && echo "Done" \
-                       || { echo "Failed!"; exit 1; }
+      cmdTry "Removing all images" "$DOCKER rmi $IMG"
     fi
   fi
 }
