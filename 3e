@@ -13,6 +13,7 @@ Usage: 3e [command]
 Commands:
   ahoy     Start Docker host (if not already running)
   avast    Stop Docker host
+  yarr     Display the Docker host status and list running containers
   scuttle  Stop and remove all running containers and remove all images
 EOF
 
@@ -83,6 +84,23 @@ function walkThePlank {
   fi
 }
 
+# Docker host and container status
+function steadyAsSheGoes {
+  echo "The Docker host be \"$(hostStatus)\""
+
+  if isAfloat; then
+    PS=$($DOCKER ps -q)
+    
+    if [ -n "$PS" ]; then
+      echo 
+      $DOCKER ps
+    else
+      # i.e., No running containers
+      echo "...yet she be the Mary Celeste"
+    fi
+  fi
+}
+
 # Command line option delegation
 function main {
   ARGV=$1
@@ -98,11 +116,11 @@ function main {
       walkThePlank
       ;;
     "yarr")
+      # A somewhat conspicuous Easter Egg!
       if [ $(date "+%m%d") == "0919" ]; then
         echo "Hahaarr, matey! Ye be a scurvy dog!"
-      else
-        main
       fi
+      steadyAsSheGoes
       ;;
     *)
       echo "$USAGE"
