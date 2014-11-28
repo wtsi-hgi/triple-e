@@ -1,0 +1,17 @@
+#compdef 3e
+
+# Triple-E autocompletion for Zsh
+# Based on the homebrew plugin for oh-my-zsh
+
+local -a _1st_arguments
+_1st_arguments=(
+  'ahoy:Start Docker host (if not already running)'
+  'avast:Stop Docker host'
+  'yarr:Display the Docker host status and list running containers'
+  'scuttle:Stop and remove all running containers and remove all images'
+)
+
+if (( CURRENT == 2 )); then
+  _describe -t commands "3e command" _1st_arguments
+  return
+fi
