@@ -53,10 +53,8 @@ function fullAhead {
     DHOST_IP=$($DHOST ip 2>/dev/null)
     echo "Docker host afloat on $DHOST_IP"
   else
-    echo "Launching Docker host..."
-    $DHOST start &>/dev/null \
-                 && fullAhead \
-                 || echo "Couldn't start host :("
+    cmdTry "Launching Docker host" "$DHOST start"
+    fullAhead
   fi
 }
 
