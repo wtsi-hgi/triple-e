@@ -5,7 +5,8 @@
 # Christopher Harrison
 # Human Genetics Informatics, Wellcome Trust Sanger Institute
 
-# GPL3
+# GPLv3 or later
+# Copyright (c) 2014 Genome Research Limited
 
 read -r -d "" USAGE <<EOF
 Usage: 3e [command]
