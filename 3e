@@ -1,130 +1,242 @@
 #!/bin/bash
 
-# Triple-E: Docker and Boot2Docker wrapper scripts
+# Triple-E: Docker and Docker Machine wrapper scripts for Mac OS X
 
 # Christopher Harrison
 # Human Genetics Informatics, Wellcome Trust Sanger Institute
 
 # GPLv3 or later
-# Copyright (c) 2014 Genome Research Limited
+# Copyright (c) 2014, 2015 Genome Research Limited
 
-read -r -d "" USAGE <<EOF
-Usage: 3e [command]
+set -eu -o pipefail
+
+D=docker
+DM=docker-machine
+
+usage() {
+  cat <<EOF
+Usage: source $(basename "$0") [command]
 
 Commands:
-  ahoy     Start Docker host (if not already running)
-  avast    Stop Docker host
-  yarr     Display the Docker host status and list running containers
-  scuttle  Stop and remove all running containers and remove all images
+  ahoy      Start Docker host (if not already running)
+  avast     Stop active Docker host
+  yarr      Display the Docker host status and list running containers
+  keelhaul  Kill all running containers on the active host
+  scuttle   Stop and remove all running containers and remove all images
 EOF
-
-DHOST=boot2docker
-DOCKER=docker
-
-# Simple command "try...catch" block
-function cmdTry {
-  TEXT=$1
-  CMD=$2
-
-  # Run $CMD but pipe all output to /dev/null
-  # Print $TEXT... followed with "Done" or "Failed!" appropriately
-  # Exit on failure
-  echo -n "$TEXT... "
-  $CMD &>/dev/null && echo "Done" \
-                   || { echo "Failed!"; exit 1; }
 }
 
-# Docker host status
-function hostStatus {
-  $DHOST status
+stderr() {
+  >&2 echo "$@"
 }
 
-# Running status of Docker host
-function isAfloat {
-  if [ $(hostStatus) == "running" ]; then
-    return 0
-  else
-    return 1
+try_fail() {
+  # This is a "try...catch" analogue, where failed commands will be
+  # caught and the script will terminate with a non-trivial exit code.
+  # Note that we have to use `script` to fool docker-machine that it's
+  # in a TTY; unfortunately, BSD `script` (a la Mac OS X) is different
+  # to GNU `script`, making this non-portable :(
+  MESSAGE=$1
+  CMD=${@:2}
+
+  echo -n "$MESSAGE... "
+  script -q /dev/null $CMD &>/dev/null && echo "Done!" \
+                                       || { echo "Failed!"; exit 1; }
+}
+
+host_active() {
+  $DM active
+}
+
+host_status() {
+  MACHINE=$1
+  $DM status $MACHINE
+}
+
+host_envs() {
+  MACHINE=$1
+  # FIXME You cannot affect the environment of the parent :(
+  # eval "$($DM env $MACHINE)"
+  
+  # One could get around this by ensuring this script is sourced (i.e.,
+  # `source 3e [command]`), but then we have to be careful about what we
+  # we do with the host shell (e.g., no calls to `exit`)
+
+  echo -n "Please run the following: "
+  echo "eval \"\$($DM env $MACHINE)\""
+}
+
+host_start() {
+  MACHINE=$1
+  try_fail "Starting \"$MACHINE\" Docker machine" \
+           $DM start $MACHINE
+}
+
+# Spin up a Docker machine and set the environment in kind
+full_ahead() {
+  # Acquire an active host
+  if ! ACTIVE=$(host_active 2>/dev/null); then
+    case $(($($DM ls -q | wc -l))) in
+      0)
+        # No machines defined: Create one, on demand
+        while true; do
+          read -p "No Docker machines exist, do you want to create a VirtualBox default? " yn
+          case $yn in
+            [Yy]*)
+              ACTIVE="default"
+              try_fail "Creating Docker machine" \
+                       $DM create -d virtualbox $ACTIVE
+              break
+              ;;
+
+            [Nn]*)
+              exit
+              ;;
+
+            *)
+              echo "...Be it \"yey\" or \"nay\", landlubber?"
+              ;;
+          esac
+        done
+        ;;
+
+      1)
+        # One machine
+        ACTIVE=$($DM ls -q | head -1)
+        if [[ $(host_status $ACTIVE) == "Stopped" ]]; then
+          host_start $ACTIVE
+        fi
+        ;;
+
+      *)
+        # If there are lots of machines, prioritise the running
+        # VirtualBox instances named "default"
+        ACTIVE=$($DM ls | awk -F' +' '
+          NR > 1 {
+            weight = 0;
+            if ($1 == "default") weight++;
+            if ($3 == "virtualbox") weight++;
+            if ($4 == "Running") weight++;
+            print weight "\t" $1;
+          }
+        ' | sort -nr | head -1 | cut -f2)
+        ;;
+    esac
+
+    # Start machine, if necessary
+    if [[ $(host_status $ACTIVE) == "Stopped" ]]; then
+      host_start $ACTIVE
+    fi
+  fi
+
+  # Set environment variables
+  host_envs $ACTIVE
+
+  IP=$($DM ip $ACTIVE 2>/dev/null)
+  echo "Docker machine \"$ACTIVE\" afloat on $IP"
+}
+
+# Stop active Docker machine
+all_stop() {
+  if ACTIVE=$(host_active 2>/dev/null); then
+    try_fail "Puttin' Docker machine \"$ACTIVE\" into dry dock" \
+             $DM stop $ACTIVE
   fi
 }
 
-# Start Docker host
-function fullAhead {
-  if isAfloat; then
-    DHOST_IP=$($DHOST ip 2>/dev/null)
-    echo "Docker host afloat on $DHOST_IP"
-  else
-    cmdTry "Launching Docker host" "$DHOST start"
-    fullAhead
+# Docker machine and container status
+steady_as_she_goes() {
+  if ! ACTIVE=$(host_active 2>/dev/null); then
+    echo "No Docker machines be sailin'"
+    return
   fi
-}
 
-# Stop Docker host
-function allStop {
-  if isAfloat; then
-    $($DHOST stop) && echo "Docker host in dry dock"
+  echo "Docker machine \"$ACTIVE\" be \"$(host_status $ACTIVE)\""
+
+  if [ -n "$($D ps -q)" ]; then
+    echo 
+    $DOCKER ps
+  else
+    # i.e., No running containers
+    echo "...yet she be the Mary Celeste"
   fi
 }
 
 # Stop and remove all running containers and remove all images
-function walkThePlank {
-  if isAfloat; then
-    PS=$($DOCKER ps -a -q)
-    IMG=$($DOCKER images -q)
-
+walk_the_plank() {
+  if host_active &>/dev/null; then
+    PS=$($D ps -aq)
+    IMG=$($D images -q)
+ 
     if [ -n "$PS" ]; then
-      cmdTry "Stopping all running containers" "$DOCKER stop $PS"
-      cmdTry "Removing all containers" "$DOCKER rm $PS"
+      try_fail "Stopping all running containers" \
+               $D stop $PS
+      try_fail "Removing all containers" \
+               $D rm $PS
     fi
-
+ 
     if [ -n "$IMG" ]; then
-      cmdTry "Removing all images" "$DOCKER rmi $IMG"
+      try_fail "Removing all images" \
+               $D rmi --force $IMG
     fi
   fi
 }
 
-# Docker host and container status
-function steadyAsSheGoes {
-  echo "The Docker host be \"$(hostStatus)\""
-
-  if isAfloat; then
-    PS=$($DOCKER ps -q)
-    
+# Kill all running containers on the active host
+the_white_whale() {
+  if host_active &>/dev/null; then
+    PS=$($D ps -aq)
     if [ -n "$PS" ]; then
-      echo 
-      $DOCKER ps
-    else
-      # i.e., No running containers
-      echo "...yet she be the Mary Celeste"
+      try_fail "Killing all running containers" \
+               $D kill $PS
     fi
   fi
 }
 
-# Command line option delegation
-function main {
-  ARGV=$1
+main() {
+  # Check binaries exist
+  if ! command -v $D &>/dev/null; then
+    stderr "Docker is not installed!"
+    exit 1
+  fi
 
-  case $ARGV in
+  if ! command -v $DM &>/dev/null; then
+    stderr "The Docker Machine is not installed!"
+    exit 1
+  fi
+
+  # Command line option delegation
+  ARGS=$1
+  case $ARGS in
     "ahoy")
-      fullAhead
+      full_ahead
       ;;
+
     "avast")
-      allStop
+      all_stop
       ;;
+
+    "keelhaul")
+      the_white_whale
+      ;;
+
     "scuttle")
-      walkThePlank
+      walk_the_plank
       ;;
+
     "yarr")
       # A somewhat conspicuous Easter Egg!
       if [ $(date "+%m%d") == "0919" ]; then
         echo "Hahaarr, matey! Ye be a scurvy dog!"
       fi
-      steadyAsSheGoes
+      steady_as_she_goes
       ;;
+
     *)
-      echo "$USAGE"
+      usage
+      exit 1
       ;;
   esac
 }
 
-main $1
+main "${1:-}"

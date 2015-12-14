@@ -7,13 +7,14 @@
 # Human Genetics Informatics, Wellcome Trust Sanger Institute
 
 # GPLv3 or later
-# Copyright (c) 2014 Genome Research Limited
+# Copyright (c) 2014, 2015 Genome Research Limited
 
 local -a _1st_arguments
 _1st_arguments=(
   'ahoy:Start Docker host (if not already running)'
-  'avast:Stop Docker host'
+  'avast:Stop active Docker host'
   'yarr:Display the Docker host status and list running containers'
+  'keelhaul:Kill all running containers on the active host'
   'scuttle:Stop and remove all running containers and remove all images'
 )
 

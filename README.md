@@ -1,16 +1,23 @@
 # Triple-E
 
-Docker and Boot2Docker wrapper scripts...sailing with a full complement
-of nautical puns.
+Docker and Docker Machine wrapper scripts...sailing with a full
+complement of nautical puns.
 
 ## Usage
 
     3e [command]
 
-    ahoy     Start Docker host (if not already running)
-    avast    Stop Docker host
-    yarr     Display the Docker host status and list running containers
-    scuttle  Stop and remove all running containers and remove all images (i.e., start afresh)
+    ahoy      Start Docker host (if not already running)
+    avast     Stop active Docker host
+    yarr      Display the Docker host status and list running containers
+    keelhaul  Kill all running containers on the active host
+    scuttle   Stop and remove all running containers and remove all images (i.e., start afresh)
+
+**Note** A shell script cannot affect the environment of its host (i.e.,
+the calling shell). As such, when a Docker machine is brought up, the
+necessary environment variables must be set manually by calling:
+
+    eval "$(docker-machine env [name])"
 
 ## Zsh Autocompletion
 
@@ -25,7 +32,7 @@ installed into your `$fpath` or as a plugin to [Oh-My-Zsh](http://ohmyz.sh).
 
 ## License
 
-Copyright (C) 2014 Genome Research Limited
+Copyright (c) 2014, 2015 Genome Research Limited
 
 This program is free software: you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
