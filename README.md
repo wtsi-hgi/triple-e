@@ -19,6 +19,12 @@ necessary environment variables must be set manually by calling:
 
     eval "$(docker-machine env [name])"
 
+An ugly-but-workable solution, if you're using Docker mainly on your
+client machine (i.e., `default` is the Docker Machine you're primarily
+working with), is creating an alias in your shell rc:
+
+    alias eee='3e ahoy && eval "$(docker-machine env default)" &>/dev/null'
+
 ## Zsh Autocompletion
 
 A tab completion function for Zsh can be found as `_3e`. This can be
