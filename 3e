@@ -155,7 +155,7 @@ steady_as_she_goes() {
 
   if [ -n "$($D ps -q)" ]; then
     echo 
-    $DOCKER ps
+    $D ps
   else
     # i.e., No running containers
     echo "...yet she be the Mary Celeste"
