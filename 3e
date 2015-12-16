@@ -14,16 +14,16 @@ D=docker
 DM=docker-machine
 
 usage() {
-  cat <<EOF
-Usage: source $(basename "$0") [command]
-
-Commands:
-  ahoy      Start Docker host (if not already running)
-  avast     Stop active Docker host
-  yarr      Display the Docker host status and list running containers
-  keelhaul  Kill all running containers on the active host
-  scuttle   Stop and remove all running containers and remove all images
-EOF
+  cat <<-EOF
+	Usage: source $(basename "$0") [command]
+	
+	Commands:
+	  ahoy      Start Docker host (if not already running)
+	  avast     Stop active Docker host
+	  yarr      Display the Docker host status and list running containers
+	  keelhaul  Kill all running containers on the active host
+	  scuttle   Stop and remove all running containers and remove all images
+	EOF
 }
 
 stderr() {
@@ -36,12 +36,22 @@ try_fail() {
   # Note that we have to use `script` to fool docker-machine that it's
   # in a TTY; unfortunately, BSD `script` (a la Mac OS X) is different
   # to GNU `script`, making this non-portable :(
-  MESSAGE=$1
-  CMD=${@:2}
+  local message=$1
+  local cmd=${@:2}
 
-  echo -n "$MESSAGE... "
-  script -q /dev/null $CMD &>/dev/null && echo "Done!" \
+  echo -n "$message... "
+  script -q /dev/null $cmd &>/dev/null && echo "Done!" \
                                        || { echo "Failed!"; exit 1; }
+}
+
+check_cmd() {
+  local cmd=$1
+  local name=$2
+
+  if ! command -v $cmd &>/dev/null; then
+    stderr "$name is not installed!"
+    exit 1
+  fi
 }
 
 host_active() {
@@ -49,43 +59,52 @@ host_active() {
 }
 
 host_status() {
-  MACHINE=$1
-  $DM status $MACHINE
+  local machine=$1
+  $DM status $machine
+}
+
+host_ip() {
+  local machine=$1
+  $DM ip $machine
 }
 
 host_envs() {
-  MACHINE=$1
+  local machine=$1
+
   # FIXME You cannot affect the environment of the parent :(
   # eval "$($DM env $MACHINE)"
   
   # One could get around this by ensuring this script is sourced (i.e.,
   # `source 3e [command]`), but then we have to be careful about what we
-  # we do with the host shell (e.g., no calls to `exit`)
+  # we do with the host shell (e.g., no calls to `exit`). Alternatively,
+  # one could enter into a subshell, which is Docker-aware, similar to a
+  # Python virtualenv...
 
-  echo -n "Please run the following: "
-  echo "eval \"\$($DM env $MACHINE)\""
+  stderr "Please run the following: eval \"\$($DM env $machine)\""
 }
 
 host_start() {
-  MACHINE=$1
-  try_fail "Starting \"$MACHINE\" Docker machine" \
-           $DM start $MACHINE
+  local machine=$1
+  try_fail "Starting \"$machine\" Docker machine" \
+           $DM start $machine
 }
 
 # Spin up a Docker machine and set the environment in kind
 full_ahead() {
   # Acquire an active host
-  if ! ACTIVE=$(host_active 2>/dev/null); then
+  local active
+
+  if ! active=$(host_active 2>/dev/null); then
     case $(($($DM ls -q | wc -l))) in
       0)
         # No machines defined: Create one, on demand
         while true; do
-          read -p "No Docker machines exist, do you want to create a VirtualBox default? " yn
+          read -p "Nary a Docker machines sails here, do ye want to create a VirtualBox default? " yn
           case $yn in
             [Yy]*)
-              ACTIVE="default"
+              active="default"
               try_fail "Creating Docker machine" \
-                       $DM create -d virtualbox $ACTIVE
+                       $DM create -d virtualbox $active
               break
               ;;
 
@@ -102,16 +121,16 @@ full_ahead() {
 
       1)
         # One machine
-        ACTIVE=$($DM ls -q | head -1)
-        if [[ $(host_status $ACTIVE) == "Stopped" ]]; then
-          host_start $ACTIVE
+        active=$($DM ls -q | head -1)
+        if [[ $(host_status $active) == "Stopped" ]]; then
+          host_start $active
         fi
         ;;
 
       *)
         # If there are lots of machines, prioritise the running
         # VirtualBox instances named "default"
-        ACTIVE=$($DM ls | awk -F' +' '
+        active=$($DM ls | awk -F' +' '
           NR > 1 {
             weight = 0;
             if ($1 == "default") weight++;
@@ -124,34 +143,39 @@ full_ahead() {
     esac
 
     # Start machine, if necessary
-    if [[ $(host_status $ACTIVE) == "Stopped" ]]; then
-      host_start $ACTIVE
+    if [[ $(host_status $active) == "Stopped" ]]; then
+      host_start $active
     fi
   fi
 
   # Set environment variables
-  host_envs $ACTIVE
+  host_envs $active
 
-  IP=$($DM ip $ACTIVE 2>/dev/null)
-  echo "Docker machine \"$ACTIVE\" afloat on $IP"
+  local ip=$(host_ip $active)
+  echo "Docker machine \"$active\" be afloat on $ip"
 }
 
 # Stop active Docker machine
 all_stop() {
-  if ACTIVE=$(host_active 2>/dev/null); then
-    try_fail "Puttin' Docker machine \"$ACTIVE\" into dry dock" \
-             $DM stop $ACTIVE
+  local active
+
+  if active=$(host_active 2>/dev/null); then
+    try_fail "Puttin' Docker machine \"$active\" into dry dock" \
+             $DM stop $active
   fi
 }
 
 # Docker machine and container status
 steady_as_she_goes() {
-  if ! ACTIVE=$(host_active 2>/dev/null); then
+  local active
+
+  if ! active=$(host_active 2>/dev/null); then
     echo "No Docker machines be sailin'"
     return
   fi
 
-  echo "Docker machine \"$ACTIVE\" be \"$(host_status $ACTIVE)\""
+  local ip=$(host_ip $active)
+  echo "Docker machine \"$active\" be afloat on $ip"
 
   if [ -n "$($D ps -q)" ]; then
     echo 
@@ -165,19 +189,19 @@ steady_as_she_goes() {
 # Stop and remove all running containers and remove all images
 walk_the_plank() {
   if host_active &>/dev/null; then
-    PS=$($D ps -aq)
-    IMG=$($D images -q)
+    local ps=$($D ps -aq)
+    local img=$($D images -q)
  
-    if [ -n "$PS" ]; then
-      try_fail "Stopping all running containers" \
-               $D stop $PS
-      try_fail "Removing all containers" \
-               $D rm $PS
+    if [ -n "$ps" ]; then
+      try_fail "All stop for running containers" \
+               $D stop $ps
+      try_fail "Scuttlin' all containers" \
+               $D rm $ps
     fi
  
-    if [ -n "$IMG" ]; then
-      try_fail "Removing all images" \
-               $D rmi --force $IMG
+    if [ -n "$img" ]; then
+      try_fail "Scuttlin' all images" \
+               $D rmi --force $img
     fi
   fi
 }
@@ -185,29 +209,22 @@ walk_the_plank() {
 # Kill all running containers on the active host
 the_white_whale() {
   if host_active &>/dev/null; then
-    PS=$($D ps -aq)
-    if [ -n "$PS" ]; then
-      try_fail "Killing all running containers" \
-               $D kill $PS
+    local ps=$($D ps -aq)
+    if [ -n "$ps" ]; then
+      try_fail "Keelhaulin' all running containers" \
+               $D kill $ps
     fi
   fi
 }
 
 main() {
   # Check binaries exist
-  if ! command -v $D &>/dev/null; then
-    stderr "Docker is not installed!"
-    exit 1
-  fi
-
-  if ! command -v $DM &>/dev/null; then
-    stderr "The Docker Machine is not installed!"
-    exit 1
-  fi
+  check_cmd $D  "Docker"
+  check_cmd $DM "The Docker Machine"
 
   # Command line option delegation
-  ARGS=$1
-  case $ARGS in
+  local args=$1
+  case $args in
     "ahoy")
       full_ahead
       ;;
