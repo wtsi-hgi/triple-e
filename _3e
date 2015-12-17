@@ -1,7 +1,6 @@
 #compdef 3e
 
-# Triple-E autocompletion for Zsh
-# Based on the homebrew plugin for oh-my-zsh
+# Triple-E Autocompletion for Zsh
 
 # Christopher Harrison
 # Human Genetics Informatics, Wellcome Trust Sanger Institute
@@ -9,16 +8,48 @@
 # GPLv3 or later
 # Copyright (c) 2014, 2015 Genome Research Limited
 
-local -a _1st_arguments
-_1st_arguments=(
-  'ahoy:Start Docker host (if not already running)'
-  'avast:Stop active Docker host'
-  'yarr:Display the Docker host status and list running containers'
-  'keelhaul:Kill all running containers on the active host'
-  'scuttle:Stop and remove all running containers and remove all images'
-)
+DM=docker-machine
 
-if (( CURRENT == 2 )); then
-  _describe -t commands "3e command" _1st_arguments
-  return
+_3e_subshell() {
+  local active
+
+  [ -n "${TRIPLE_E:-}" ] \
+  && active=$($DM active 2>/dev/null) \
+  && [[ "$TRIPLE_E" == "$active" ]]
+}
+
+_3e_machines() {
+  _alternative "machines:Docker machines:($($DM ls -q))"
+}
+
+_arguments -C \
+  '1:command:->cmds' \
+  '*:: :->args' \
+
+local -a _3e_commands;
+
+if _3e_subshell; then
+  _3e_commands=(
+    'avast:Stop all running containers and shutdown the active host'
+    'yarr:Display the active host IP and the status of any running containers'
+    'keelhaul:Kill all running containers'
+    'scuttle:Stop and remove all running containers and remove all images'
+  )
+else
+  _3e_commands=(
+    'ahoy:Start a Docker host, if necessary, and enter the Triple-E subshell'
+    'avast:Stop all running Docker hosts'
+    'yarr:Display the status of the available Docker hosts'
+  )
 fi
+
+case "$state" in
+  (cmds)
+    _describe 'command' _3e_commands
+    ! _3e_subshell && _3e_machines
+    ;;
+
+  (args)
+    ! _3e_subshell && [[ "$line[1]" == "ahoy" ]] && _3e_machines
+    ;;
+esac
