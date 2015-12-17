@@ -1,33 +1,64 @@
 #!/bin/bash
 
-# Triple-E: Docker and Docker Machine wrapper scripts for Mac OS X
+# Triple-E
+# Docker and Docker Machine wrapper script for Mac OS X
 
 # Christopher Harrison
 # Human Genetics Informatics, Wellcome Trust Sanger Institute
+
+# Dependencies: docker, docker-machine, expect
 
 # GPLv3 or later
 # Copyright (c) 2014, 2015 Genome Research Limited
 
 set -eu -o pipefail
 
+PROGNAME=$(basename "$0")
+
 D=docker
 DM=docker-machine
 
 usage() {
+  # FIXME Write this in pirate?...
   cat <<-EOF
-	Usage: source $(basename "$0") [command]
+	Usage: $PROGNAME [command]
 	
 	Commands:
-	  ahoy      Start Docker host (if not already running)
-	  avast     Stop active Docker host
-	  yarr      Display the Docker host status and list running containers
-	  keelhaul  Kill all running containers on the active host
-	  scuttle   Stop and remove all running containers and remove all images
+	
+	  ahoy [name]  Start the Docker host, if not already running, and enter
+	               into a Docker-aware environment (subshell); if no name is
+	               is provided, then it will:
+	               * Choose the single host, if only one is found;
+	               * Prompt to create a new VirtualBox instance, if no hosts
+	                 are found;
+	               * Choose a host prioritised by running, VirtualBox and
+	                 named "default"
+	
+	  avast        Stop all running containers and shutdown the active host
+	               before exiting the Docker-aware environment; outside the
+	               environment, all hosts will be shutdown
+	
+	  yarr         Display the running containers on the active host within
+	               the Docker-aware environment; outside the environment,
+	               show the available hosts
+	
+	The following are only applicable within a Docker-aware environment:
+	
+	  keelhaul     Kill all running containers on the active host
+	  
+	  scuttle      Stop and remove all running containers and remove all
+	               images on the active host
+	
+	Note that "ahoy" acts as a default, but is not applicable from within a
+	Docker-aware environment. All other commands are aliased within the
+	environment (i.e., omitting the "$PROGNAME"); moreover, "exit" is aliased to
+	do the right thing™
 	EOF
 }
 
 stderr() {
-  >&2 echo "$@"
+  # echo to stderr in ANSI red
+  >&2 echo -e "\033[0;31m$@\033[0m"
 }
 
 try_fail() {
@@ -44,7 +75,8 @@ try_fail() {
                                        || { echo "Failed!"; exit 1; }
 }
 
-check_cmd() {
+check_bin() {
+  # Preflight check for binary's existence on $PATH
   local cmd=$1
   local name=$2
 
@@ -54,206 +86,265 @@ check_cmd() {
   fi
 }
 
-host_active() {
-  $DM active
-}
+3e_machineCreate() {
+  # Create a new machine on demand
+  local yn
 
-host_status() {
-  local machine=$1
-  $DM status $machine
-}
-
-host_ip() {
-  local machine=$1
-  $DM ip $machine
-}
-
-host_envs() {
-  local machine=$1
-
-  # FIXME You cannot affect the environment of the parent :(
-  # eval "$($DM env $MACHINE)"
-  
-  # One could get around this by ensuring this script is sourced (i.e.,
-  # `source 3e [command]`), but then we have to be careful about what we
-  # we do with the host shell (e.g., no calls to `exit`). Alternatively,
-  # one could enter into a subshell, which is Docker-aware, similar to a
-  # Python virtualenv...
-
-  stderr "Please run the following: eval \"\$($DM env $machine)\""
-}
-
-host_start() {
-  local machine=$1
-  try_fail "Starting \"$machine\" Docker machine" \
-           $DM start $machine
-}
-
-# Spin up a Docker machine and set the environment in kind
-full_ahead() {
-  # Acquire an active host
-  local active
-
-  if ! active=$(host_active 2>/dev/null); then
-    case $(($($DM ls -q | wc -l))) in
-      0)
-        # No machines defined: Create one, on demand
-        while true; do
-          read -p "Nary a Docker machines sails here, do ye want to create a VirtualBox default? " yn
-          case $yn in
-            [Yy]*)
-              active="default"
-              try_fail "Creating Docker machine" \
-                       $DM create -d virtualbox $active
-              break
-              ;;
-
-            [Nn]*)
-              exit
-              ;;
-
-            *)
-              echo "...Be it \"yey\" or \"nay\", landlubber?"
-              ;;
-          esac
-        done
+  while true; do
+    read -p "Nary a Docker machine sails here, do ye want to create a VirtualBox default? " yn
+    case $yn in
+      [Yy]*)
+        try_fail "Creating Docker machine" \
+                 $DM create -d virtualbox default
+        break
         ;;
 
-      1)
-        # One machine
-        active=$($DM ls -q | head -1)
-        if [[ $(host_status $active) == "Stopped" ]]; then
-          host_start $active
-        fi
+      [Nn]*)
+        exit
         ;;
 
       *)
-        # If there are lots of machines, prioritise the running
-        # VirtualBox instances named "default"
-        active=$($DM ls | awk -F' +' '
-          NR > 1 {
-            weight = 0;
-            if ($1 == "default") weight++;
-            if ($3 == "virtualbox") weight++;
-            if ($4 == "Running") weight++;
-            print weight "\t" $1;
-          }
-        ' | sort -nr | head -1 | cut -f2)
+        stderr "...Be it \"yey\" or \"nay\", landlubber?"
         ;;
     esac
-
-    # Start machine, if necessary
-    if [[ $(host_status $active) == "Stopped" ]]; then
-      host_start $active
-    fi
-  fi
-
-  # Set environment variables
-  host_envs $active
-
-  local ip=$(host_ip $active)
-  echo "Docker machine \"$active\" be afloat on $ip"
+  done
 }
 
-# Stop active Docker machine
-all_stop() {
-  local active
+3e_machineChoose() {
+  local machines=$(($($DM ls -q | wc -l)))
 
-  if active=$(host_active 2>/dev/null); then
-    try_fail "Puttin' Docker machine \"$active\" into dry dock" \
-             $DM stop $active
-  fi
-}
+  if [ "$machines" -eq "1" ]; then
+    # One machine
+    # NOTE The multiple machine branch (below) will produce the correct
+    # result, but this branch ought to be faster
+    $DM ls -q | head -1
 
-# Docker machine and container status
-steady_as_she_goes() {
-  local active
-
-  if ! active=$(host_active 2>/dev/null); then
-    echo "No Docker machines be sailin'"
-    return
-  fi
-
-  local ip=$(host_ip $active)
-  echo "Docker machine \"$active\" be afloat on $ip"
-
-  if [ -n "$($D ps -q)" ]; then
-    echo 
-    $D ps
   else
-    # i.e., No running containers
-    echo "...yet she be the Mary Celeste"
+    # If there are lots of machines, prioritise the running VirtualBox
+    # instances named "default"
+    $DM ls \
+    | awk -F' +' 'NR > 1 {
+                    weight = 0;
+                    if ($1 == "default") weight++;
+                    if ($3 == "virtualbox") weight++;
+                    if ($4 == "Running") weight++;
+                    print weight "\t" $1;
+                  }' \
+    | sort -nr \
+    | head -1 \
+    | cut -f2
+
   fi
 }
 
-# Stop and remove all running containers and remove all images
-walk_the_plank() {
-  if host_active &>/dev/null; then
-    local ps=$($D ps -aq)
-    local img=$($D images -q)
- 
-    if [ -n "$ps" ]; then
-      try_fail "All stop for running containers" \
-               $D stop $ps
-      try_fail "Scuttlin' all containers" \
-               $D rm $ps
+3e_machineActive() {
+  $DM active
+}
+
+3e_inSubshell() {
+  # Test we're in a valid Docker-aware subshell
+  local active
+
+  [ -n "${TRIPLE_E:-}" ] \
+  && active=$(3e_machineActive 2>/dev/null) \
+  && [ "$TRIPLE_E" == "$active" ]
+}
+
+3e_fullAhead() {
+  # Spin up the specified Docker machine, if necessary, and spawn the
+  # Docker-aware subshell
+  local machine=$1
+
+  if [ "$($DM status $machine)" == "Stopped" ]; then
+    try_fail "Starting \"$machine\" Docker machine" \
+             $DM start $machine
+  fi
+
+  # Wait until machine is ready
+  # FIXME Timeout to avoid infinite/long loop
+  while [ "$($DM status $machine)" != "Running" ]; do
+    continue
+  done
+
+  # Set environment variables and spawn subshell
+  # FIXME This is gross, but the only shell agnostic solution I've found
+  eval "$($DM env $machine)"
+  expect <(cat <<-EXPECT
+	  spawn $SHELL
+	  send "export TRIPLE_E=\"$machine\"\r"
+	  send "PS1=\"(3e:$machine) \\\$PS1\"\r"
+	  send "alias exit=\"3e avast; exit\"\r"
+	  send "alias avast=\"exit\"\r"
+	  send "alias yarr=\"3e yarr\"\r"
+	  send "alias keelhaul=\"3e keelhaul\"\r"
+	  send "alias scuttle=\"3e scuttle\"\r"
+	  send "clear\r"
+	  interact
+	EXPECT)
+}
+
+3e_allStop() {
+  local machine=$1
+
+  try_fail "Puttin' Docker machine \"$machine\" into dry dock" \
+           $DM stop $machine
+}
+
+3e_steadyAsSheGoes() {
+  # Docker machine or active machine's container status
+  if 3e_inSubshell; then
+    # Show active machine's IP and running containers
+    local ip=$($DM ip $TRIPLE_E)
+    echo "Docker machine \"$TRIPLE_E\" be afloat on $ip"
+
+    if [ -n "$($D ps -q)" ]; then
+      echo
+      $D ps
+    else
+      # i.e., No running containers
+      echo "...yet she be the Mary Celeste!"
     fi
- 
-    if [ -n "$img" ]; then
-      try_fail "Scuttlin' all images" \
-               $D rmi --force $img
+
+  else
+    # Show Docker machines
+    if [ -n "$($DM ls -q)" ]; then
+      $DM ls
+    else
+      # i.e., No machines
+      echo "These waters be empty of machines!"
     fi
   fi
 }
 
-# Kill all running containers on the active host
-the_white_whale() {
-  if host_active &>/dev/null; then
-    local ps=$($D ps -aq)
-    if [ -n "$ps" ]; then
-      try_fail "Keelhaulin' all running containers" \
-               $D kill $ps
-    fi
+3e_theWhiteWhale() {
+  # Kill all running containers on the active host
+  local ps=$($D ps -aq)
+  if [ -n "$ps" ]; then
+    try_fail "Keelhaulin' all running containers" \
+             $D kill $ps
   fi
 }
 
-main() {
-  # Check binaries exist
-  check_cmd $D  "Docker"
-  check_cmd $DM "The Docker Machine"
+3e_walkThePlank() {
+  # Stop and remove all running containers and remove all images
+  local ps=$($D ps -aq)
+  local img=$($D images -q)
 
+  if [ -n "$ps" ]; then
+    try_fail "All stop for running containers" \
+             $D stop $ps
+    try_fail "Scuttlin' all containers" \
+             $D rm $ps
+  fi
+
+  if [ -n "$img" ]; then
+    try_fail "Scuttlin' all images" \
+             $D rmi --force $img
+  fi
+}
+
+3e_preflight() {
+  # Check dependencies exist
+  check_bin $D     "Docker"
+  check_bin $DM    "The Docker Machine"
+  check_bin expect "Expect"
+}
+
+3e_parseCmd() {
   # Command line option delegation
-  local args=$1
-  case $args in
+  local cmd=${1:-}
+  case $cmd in
     "ahoy")
-      full_ahead
+      if 3e_inSubshell; then
+        # "ahoy" makes no sense within a subshell
+        stderr "Ye already be sailin'! Savvy?"
+        usage
+        exit 1
+      fi
+
+      local machine=${2:-}
+
+      if [ -z "$machine" ]; then
+        # No machine specified
+
+        # If no machines exist, prompt to create one
+        if [ -z "$($DM ls -q)" ]; then
+          3e_machineCreate
+        fi
+
+        # Choose and start most appropriate machine
+        machine=$(3e_machineChoose)
+        3e_parseCmd ahoy "$machine"
+
+      else
+        # Check specified machine exists
+        if $DM ls -q | grep -Fq -- "$machine"; then
+          3e_fullAhead "$machine"
+
+        else
+          stderr "Thar be no machine named \"$machine\" in these waters!"
+          usage
+          exit 1
+        fi
+      fi
       ;;
 
     "avast")
-      all_stop
-      ;;
+      if 3e_inSubshell; then
+        # Stop all containers and shutdown active machine
+        3e_allStop "$TRIPLE_E"
 
-    "keelhaul")
-      the_white_whale
-      ;;
-
-    "scuttle")
-      walk_the_plank
+      else
+        # Stop all containers and shutdown every running machine
+        local machine
+        $DM ls -q --filter "state=Running" | while read -r machine; do
+          3e_allStop "$machine"
+        done
+      fi
       ;;
 
     "yarr")
       # A somewhat conspicuous Easter Egg!
-      if [ $(date "+%m%d") == "0919" ]; then
+      if [ "$(date "+%m%d")" == "0919" ]; then
         echo "Hahaarr, matey! Ye be a scurvy dog!"
       fi
-      steady_as_she_goes
+      3e_steadyAsSheGoes
+      ;;
+
+    "keelhaul")
+      if ! 3e_inSubshell; then
+        # "keelhaul" makes no sense outside a subshell
+        stderr "Ye can't keelhaul what's already dead! Savvy?"
+        usage
+        exit 1
+      fi
+
+      3e_theWhiteWhale
+      ;;
+
+    "scuttle")
+      if ! 3e_inSubshell; then
+        # "scuttle" makes no sense outside a subshell
+        stderr "Ye can't sink the unsinkable! Savvy?"
+        usage
+        exit 1
+      fi
+
+      3e_walkThePlank
       ;;
 
     *)
-      usage
-      exit 1
+      [ "$cmd" == "-h" -o "$cmd" == "--help" ] && usage \
+                                               || 3e_parseCmd ahoy $cmd
       ;;
   esac
 }
 
-main "${1:-}"
+3e_main() {
+  local args=$@
+
+  3e_preflight \
+  && 3e_parseCmd $args
+}
+
+3e_main $@

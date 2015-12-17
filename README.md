@@ -1,29 +1,58 @@
 # Triple-E
 
-Docker and Docker Machine wrapper scripts...sailing with a full
+Docker and Docker Machine wrapper script...sailing with a full
 complement of nautical puns.
 
 ## Usage
 
-    3e [command]
+    3e [ahoy|avast|yarr|keelhaul|scuttle]
 
-    ahoy      Start Docker host (if not already running)
-    avast     Stop active Docker host
-    yarr      Display the Docker host status and list running containers
-    keelhaul  Kill all running containers on the active host
-    scuttle   Stop and remove all running containers and remove all images (i.e., start afresh)
+Within the Docker-aware subshell, commands which make sense are aliased.
 
-**Note** A shell script cannot affect the environment of its host (i.e.,
-the calling shell). As such, when a Docker machine is brought up, the
-necessary environment variables must be set manually by calling:
+### `ahoy [name]`
 
-    eval "$(docker-machine env [name])"
+Start the Docker host, if not already running, and enter into a
+Docker-aware environment (subshell). If no name is specified, then it
+will:
 
-An ugly-but-workable solution, if you're using Docker mainly on your
-client machine (i.e., `default` is the Docker Machine you're primarily
-working with), is creating an alias in your shell rc:
+* Choose the single host, if only one is found;
+* Prompt to create a new VirtualBox instance, if no hosts are found;
+* Choose a host prioritised by running, VirtualBox and named "default"
 
-    alias eee='3e ahoy && eval "$(docker-machine env default)" &>/dev/null'
+Within the subshell, you may exit by issuing the `avast` command
+(aliased with `exit`). Note that, if you run multiple subshells
+simultaneously (e.g., within tmux), then closing one will invalidate the
+others.
+
+This is the default option and can be omitted.
+
+### `avast`
+
+**Within the Subshell** Stop all running containers and shutdown the
+active machine.
+
+**Outside the Subshell** Stop all running containers and shutdown every
+running machine.
+
+### `yarr`
+
+**Within the Subshell** Display the active machine's IP address and the
+list (and status) of its running containers.
+
+**Outside the Subshell** Show the available machines.
+
+### `keelhaul`
+
+Kill all running containers on the active machine.
+
+This option is only applicable within the subshell.
+
+### `scuttle`
+
+Stop and remove all running containers and remove all images on the
+active machine.
+
+This option is only applicable within the subshell.
 
 ## Zsh Autocompletion
 
