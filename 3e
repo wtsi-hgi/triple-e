@@ -137,16 +137,12 @@ check_bin() {
   fi
 }
 
-3e_machineActive() {
-  $DM active
-}
-
 3e_inSubshell() {
   # Test we're in a valid Docker-aware subshell
   local active
 
   [ -n "${TRIPLE_E:-}" ] \
-  && active=$(3e_machineActive 2>/dev/null) \
+  && active=$($DM active 2>/dev/null) \
   && [ "$TRIPLE_E" == "$active" ]
 }
 
