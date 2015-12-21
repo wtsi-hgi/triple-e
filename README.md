@@ -5,9 +5,10 @@ complement of nautical puns.
 
 ## Usage
 
-    3e [ahoy|avast|yarr|keelhaul|scuttle]
+    3e [command]
 
-Within the Docker-aware subshell, commands which make sense are aliased.
+Start or manage a Docker-aware environment. (Note that, within which,
+commands that make sense are aliased for convenience.)
 
 ### `ahoy [name]`
 
