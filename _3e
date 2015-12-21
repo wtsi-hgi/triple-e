@@ -10,46 +10,58 @@
 
 DM=docker-machine
 
-_3e_subshell() {
+_3e_context() {
   local active
 
-  [ -n "${TRIPLE_E:-}" ] \
+  [ -n "$TRIPLE_E" ] \
   && active=$($DM active 2>/dev/null) \
-  && [[ "$TRIPLE_E" == "$active" ]]
+  && [[ "$TRIPLE_E" == "$active" ]] \
+  && echo "sub" \
+  || echo "ext"
 }
 
 _3e_machines() {
-  _alternative "machines:Docker machines:($($DM ls -q))"
+  compadd $($DM ls -q)
 }
 
-_arguments -C \
-  '1:command:->cmds' \
-  '*:: :->args' \
+_3e_complete() {
+  local ctx=$(_3e_context)
+  local commands;
+  local machines="machines:Docker machines:_3e_machines"
 
-local -a _3e_commands;
+  _arguments -C \
+    '1:command:->cmds' \
+    '*:: :->args' \
 
-if _3e_subshell; then
-  _3e_commands=(
-    'avast:Stop all running containers and shutdown the active host'
-    'yarr:Display the active host IP and the status of any running containers'
-    'keelhaul:Kill all running containers'
-    'scuttle:Stop and remove all running containers and remove all images'
-  )
-else
-  _3e_commands=(
-    'ahoy:Start a Docker host, if necessary, and enter the Triple-E subshell'
-    'avast:Stop all running Docker hosts'
-    'yarr:Display the status of the available Docker hosts'
-  )
-fi
+  if [[ "$ctx" == "sub" ]]; then
+    commands=(
+      'avast:Stop all running containers and shutdown the active host'
+      'yarr:Display the active host IP and the status of any running containers'
+      'keelhaul:Kill all running containers'
+      'scuttle:Stop and remove all running containers and remove all images'
+    )
+  else
+    commands=(
+      'ahoy:Start a Docker host, if necessary, and enter the Triple-E subshell'
+      'avast:Stop all running Docker hosts'
+      'yarr:Display the status of the available Docker hosts'
+    )
+  fi
 
-case "$state" in
-  (cmds)
-    _describe 'command' _3e_commands
-    ! _3e_subshell && _3e_machines
-    ;;
+  case "$state" in
+    (cmds)
+      _describe 'command' commands
+      [[ "$ctx" == "ext" ]] && _alternative $machines
+      ;;
 
-  (args)
-    ! _3e_subshell && [[ "$line[1]" == "ahoy" ]] && _3e_machines
-    ;;
-esac
+    (args)
+      [[ "$ctx" == "ext" ]] \
+      && [[ "$line[1]" == "ahoy" ]] \
+      && _alternative $machines
+      ;;
+  esac
+
+  return 0
+}
+
+_3e_complete
